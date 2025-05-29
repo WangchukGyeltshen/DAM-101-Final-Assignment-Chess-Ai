@@ -10,7 +10,7 @@
 import sys
 import pygame as p
 from engine import GameState, Move
-from chessAi import findBestMove, findRandomMoves
+from chessAi import ChessAI, findBestMove, findRandomMoves
 from multiprocessing import Process, Queue
 
 # Initialize the mixer
@@ -21,8 +21,10 @@ capture_sound = p.mixer.Sound("sounds/capture.mp3")
 promote_sound = p.mixer.Sound("sounds/promote.mp3")
 
 BOARD_WIDTH = BOARD_HEIGHT = 512
-MOVE_LOG_PANEL_WIDTH = 250
-MOVE_LOG_PANEL_HEIGHT = BOARD_HEIGHT
+EVAL_BAR_WIDTH = 40
+MOVE_LOG_PANEL_HEIGHT = 80
+WINDOW_WIDTH = BOARD_WIDTH + EVAL_BAR_WIDTH
+WINDOW_HEIGHT = BOARD_HEIGHT + MOVE_LOG_PANEL_HEIGHT
 DIMENSION = 8
 SQ_SIZE = BOARD_HEIGHT // DIMENSION
 MAX_FPS = 15
@@ -49,6 +51,10 @@ LIGHT_SQUARE_COLOR = (237, 238, 209)
 DARK_SQUARE_COLOR = (119, 153, 82)
 MOVE_HIGHLIGHT_COLOR = (84, 115, 161)
 POSSIBLE_MOVE_COLOR = (255, 255, 51)
+
+EVAL_BAR_BG = (220, 220, 220)
+EVAL_BAR_WHITE = (240, 240, 255)
+EVAL_BAR_BLACK = (100, 120, 180)
 
 # 2 Brown
 
@@ -156,11 +162,10 @@ moveBlackLog = []
 def main():
     # initialize py game
     p.init()
-    screen = p.display.set_mode(
-        (BOARD_WIDTH + MOVE_LOG_PANEL_WIDTH, BOARD_HEIGHT))
+    screen = p.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = p.time.Clock()
     screen.fill(p.Color(LIGHT_SQUARE_COLOR))
-    moveLogFont = p.font.SysFont("Times New Roman", 12, False, False)
+    moveLogFont = p.font.SysFont("Arial", 16, False, False)
     # Creating gamestate object calling our constructor
     gs = GameState()
     if (gs.playerWantsToPlayAsBlack):
@@ -185,6 +190,7 @@ def main():
     previousPos = ""
     countMovesForDraw = 0
     COUNT_DRAW = 0
+    ai = ChessAI()
     while running:
         humanTurn = (gs.whiteToMove and playerWhiteHuman) or (
             not gs.whiteToMove and playerBlackHuman)
@@ -337,7 +343,8 @@ def main():
             animate = False
             moveUndone = False
 
-        drawGameState(screen, gs, validMoves, squareSelected, moveLogFont)
+        eval_score = ai._evaluate(gs)
+        drawGameState(screen, gs, validMoves, squareSelected, moveLogFont, eval_score)
 
         if COUNT_DRAW == 1:
             gameOver = True
@@ -356,10 +363,13 @@ def main():
         p.display.flip()
 
 
-def drawGameState(screen, gs, validMoves, squareSelected, moveLogFont):
-    drawSquare(screen)  # draw square on board
+def drawGameState(screen, gs, validMoves, squareSelected, moveLogFont, eval_score):
+    drawBoardBorder(screen)
+    drawSquare(screen)
+    highlightLastMove(screen, gs)
     highlightSquares(screen, gs, validMoves, squareSelected)
     drawPieces(screen, gs.board)
+    drawEvalBar(screen, eval_score)
     drawMoveLog(screen, gs, moveLogFont)
 
 
@@ -402,38 +412,24 @@ def drawPieces(screen, board):
 
 
 def drawMoveLog(screen, gs, font):
-    # rectangle
-    moveLogRect = p.Rect(
-        BOARD_WIDTH, 0, MOVE_LOG_PANEL_WIDTH, MOVE_LOG_PANEL_HEIGHT)
-    p.draw.rect(screen, p.Color(LIGHT_SQUARE_COLOR), moveLogRect)
+    moveLogRect = p.Rect(0, BOARD_HEIGHT, BOARD_WIDTH, MOVE_LOG_PANEL_HEIGHT)
+    p.draw.rect(screen, (220, 220, 230), moveLogRect)
     moveLog = gs.moveLog
     moveTexts = []
 
     for i in range(0, len(moveLog), 2):
-        moveString = " " + str(i//2 + 1) + ". " + str(moveLog[i]) + " "
+        moveString = f"{i//2 + 1}. {moveLog[i]}"
         if i+1 < len(moveLog):
-            moveString += str(moveLog[i+1])
+            moveString += f" {moveLog[i+1]}"
         moveTexts.append(moveString)
 
-    movesPerRow = 3
-    padding = 10  # Increase padding for better readability
-    lineSpacing = 5  # Increase line spacing for better separation
-    textY = padding
-
-    for i in range(0, len(moveTexts), movesPerRow):
-        text = ""
-        for j in range(movesPerRow):
-            if i + j < len(moveTexts):
-                text += moveTexts[i+j]
-
-        textObject = font.render(text, True, p.Color('black'))
-
-        # Adjust text location based on padding and line spacing
-        textLocation = moveLogRect.move(padding, textY)
-        screen.blit(textObject, textLocation)
-
-        # Update Y coordinate for the next line with increased line spacing
-        textY += textObject.get_height() + lineSpacing
+    padding = 16
+    textY = BOARD_HEIGHT + padding
+    textX = padding
+    for text in moveTexts[-6:]:
+        textObject = font.render(text, True, (40, 40, 40))
+        screen.blit(textObject, (textX, textY))
+        textY += textObject.get_height() + 8
 
 
 # animating a move
@@ -498,6 +494,54 @@ def drawEndGameText(screen, text):
     # Create a second rendering of the text with a slight offset for a shadow effect
     textObject = font.render(text, 0, p.Color('Black'))
     screen.blit(textObject, textLocation.move(1, 1))
+
+
+def drawEvalBar(screen, eval_score):
+    bar_x = BOARD_WIDTH
+    bar_y = 0
+    bar_width = EVAL_BAR_WIDTH
+    bar_height = BOARD_HEIGHT
+
+    # Gradient background
+    for i in range(bar_height):
+        color = [
+            int(EVAL_BAR_WHITE[j] + (EVAL_BAR_BLACK[j] - EVAL_BAR_WHITE[j]) * i / bar_height)
+            for j in range(3)
+        ]
+        p.draw.line(screen, color, (bar_x, bar_y + i), (bar_x + bar_width, bar_y + i))
+
+    # Clamp eval_score for display
+    eval_clamped = max(min(eval_score, 5), -5)
+    white_height = int((0.5 - eval_clamped / 10) * bar_height)
+    white_height = max(0, min(bar_height, white_height))
+
+    # Draw split line
+    p.draw.line(screen, (255, 255, 255), (bar_x, bar_y + white_height), (bar_x + bar_width, bar_y + white_height), 2)
+
+    # Draw border
+    p.draw.rect(screen, (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), 2)
+
+    # Draw eval number
+    font = p.font.SysFont("Arial", 18, True, False)
+    eval_text = f"{eval_score:+.2f}"
+    text_surf = font.render(eval_text, True, (0, 0, 0))
+    text_rect = text_surf.get_rect(center=(bar_x + bar_width // 2, bar_y + bar_height // 2))
+    screen.blit(text_surf, text_rect)
+
+
+def drawBoardBorder(screen):
+    border_rect = p.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT)
+    p.draw.rect(screen, (60, 60, 60), border_rect, border_radius=16, width=6)
+
+
+def highlightLastMove(screen, gs):
+    if gs.moveLog:
+        lastMove = gs.moveLog[-1]
+        s = p.Surface((SQ_SIZE, SQ_SIZE))
+        s.set_alpha(120)
+        s.fill((255, 255, 0))  # yellow highlight
+        screen.blit(s, (lastMove.startCol * SQ_SIZE, lastMove.startRow * SQ_SIZE))
+        screen.blit(s, (lastMove.endCol * SQ_SIZE, lastMove.endRow * SQ_SIZE))
 
 
 # if we import main then main function wont run it will run only while running this file
