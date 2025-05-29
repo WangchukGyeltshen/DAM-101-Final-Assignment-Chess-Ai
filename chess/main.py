@@ -10,7 +10,7 @@
 import sys
 import pygame as p
 from engine import GameState, Move
-from chessAi import findRandomMoves, findBestMove
+from chessAi import findBestMove, findRandomMoves
 from multiprocessing import Process, Queue
 
 # Initialize the mixer
