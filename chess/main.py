@@ -7,7 +7,7 @@
 
 # Responsible for handling user input and displaying the current Gamestate object
 
-import sys
+import sys, asyncio
 import pygame as p
 from engine import GameState, Move
 from chessAi import ChessAI, findBestMove, findRandomMoves
@@ -386,20 +386,20 @@ def drawSquare(screen):
 def highlightSquares(screen, gs, validMoves, squareSelected):
     if squareSelected != ():  # make sure there is a square to select
         row, col = squareSelected
-        # make sure they click there own piece
-        if gs.board[row][col][0] == ('w' if gs.whiteToMove else 'b'):
-            # highlight selected piece square
-            # Surface in pygame used to add images or transperency feature
-            s = p.Surface((SQ_SIZE, SQ_SIZE))
-            # set_alpha --> transperancy value (0 transparent)
-            s.set_alpha(100)
-            s.fill(p.Color(MOVE_HIGHLIGHT_COLOR))
-            screen.blit(s, (col*SQ_SIZE, row*SQ_SIZE))
-            # highlighting valid square
-            s.fill(p.Color(POSSIBLE_MOVE_COLOR))
-            for move in validMoves:
-                if move.startRow == row and move.startCol == col:
-                    screen.blit(s, (move.endCol*SQ_SIZE, move.endRow*SQ_SIZE))
+        # Only highlight if the selection is on the board
+        if 0 <= row < 8 and 0 <= col < 8:
+            # make sure they click their own piece
+            if gs.board[row][col][0] == ('w' if gs.whiteToMove else 'b'):
+                # highlight selected piece square
+                s = p.Surface((SQ_SIZE, SQ_SIZE))
+                s.set_alpha(100)
+                s.fill(p.Color(MOVE_HIGHLIGHT_COLOR))
+                screen.blit(s, (col*SQ_SIZE, row*SQ_SIZE))
+                # highlighting valid squares
+                s.fill(p.Color(POSSIBLE_MOVE_COLOR))
+                for move in validMoves:
+                    if move.startRow == row and move.startCol == col:
+                        screen.blit(s, (move.endCol*SQ_SIZE, move.endRow*SQ_SIZE))
 
 
 def drawPieces(screen, board):
